@@ -83,6 +83,6 @@ app.get("/{*splat}", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-server.listen(PORT, () => {
-  console.log(`Abrari Chat running at http://localhost:${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`Abrari Chat running on port ${PORT}`);
 });
