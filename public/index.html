@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Abrari Chat</title>
+
+  <link rel="stylesheet" href="/style.css">
+
+  <link rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+
+<body>
+
+  <header class="navbar">
+    <div class="brand">
+      <i class="fa-solid fa-comments"></i>
+      <span>Abrari Chat</span>
+    </div>
+
+    <div class="nav-status">
+      <span class="status-dot"></span>
+      <span>Live Chat</span>
+    </div>
+  </header>
+
+  <!-- Home Page -->
+  <main id="homePage" class="home-page">
+
+    <div class="welcome-card">
+      <div class="welcome-icon">
+        <i class="fa-solid fa-message"></i>
+      </div>
+
+      <h1>Welcome to Abrari Chat</h1>
+
+      <p>
+        Simple, private room-based messaging.
+        No account required.
+      </p>
+
+      <button id="createRoomBtn" class="primary-btn">
+        <i class="fa-solid fa-plus"></i>
+        Create New Chat
+      </button>
+
+      <div class="divider">
+        <span>OR JOIN A ROOM</span>
+      </div>
+
+      <input
+        id="roomLinkInput"
+        type="text"
+        placeholder="Paste your chat link here"
+      >
+
+      <button id="joinRoomBtn" class="secondary-btn">
+        Join Chat
+      </button>
+
+      <p id="homeError" class="error"></p>
+    </div>
+
+  </main>
+
+  <!-- Chat Page -->
+  <main id="chatPage" class="chat-page hidden">
+
+    <section class="chat-container">
+
+      <div class="chat-header">
+
+        <div class="room-info">
+          <div class="avatar">
+            <i class="fa-solid fa-user-group"></i>
+          </div>
+
+          <div>
+            <h3>Chat Room</h3>
+            <p id="connectionStatus">Connecting...</p>
+          </div>
+        </div>
+
+        <button id="shareBtn" class="share-btn">
+          <i class="fa-solid fa-share-nodes"></i>
+          Share
+        </button>
+
+      </div>
+
+      <div id="messages" class="messages">
+
+        <div class="system-message">
+          Welcome to Abrari Chat!
+        </div>
+
+      </div>
+
+      <div id="typingIndicator" class="typing hidden">
+        Someone is typing...
+      </div>
+
+      <form id="messageForm" class="message-form">
+
+        <input
+          id="messageInput"
+          type="text"
+          placeholder="Type a message..."
+          maxlength="2000"
+          autocomplete="off"
+        >
+
+        <button type="submit" class="send-btn">
+          <i class="fa-solid fa-paper-plane"></i>
+        </button>
+
+      </form>
+
+    </section>
+
+  </main>
+
+  <!-- Username Modal -->
+  <div id="nameModal" class="modal hidden">
+
+    <div class="modal-card">
+
+      <h2>Enter Your Name</h2>
+
+      <p>No registration required.</p>
+
+      <input
+        id="usernameInput"
+        type="text"
+        maxlength="25"
+        placeholder="Your name"
+      >
+
+      <button id="enterChatBtn" class="primary-btn">
+        Enter Chat
+      </button>
+
+      <p id="nameError" class="error"></p>
+
+    </div>
+
+  </div>
+
+  <script src="/script.js"></script>
+
+</body>
+</html>
