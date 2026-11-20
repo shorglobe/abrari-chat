@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+  <meta name="theme-color" content="#10131c">
+  <meta name="description" content="Abrari Chat - Simple, private real-time messaging.">
+
   <title>Abrari Chat</title>
 
   <link rel="stylesheet" href="/style.css">
@@ -16,10 +19,13 @@
 
 <body>
 
+  <!-- NAVBAR -->
   <header class="navbar">
     <div class="brand">
-      <i class="fa-solid fa-comments"></i>
-      <span>Abrari Chat</span>
+      <div class="brand-icon">
+        <i class="fa-solid fa-comments"></i>
+      </div>
+      <span>Abrari <strong>Chat</strong></span>
     </div>
 
     <div class="nav-status">
@@ -28,10 +34,12 @@
     </div>
   </header>
 
-  <!-- Home Page -->
+
+  <!-- HOME PAGE -->
   <main id="homePage" class="home-page">
 
     <div class="welcome-card">
+
       <div class="welcome-icon">
         <i class="fa-solid fa-message"></i>
       </div>
@@ -39,8 +47,8 @@
       <h1>Welcome to Abrari Chat</h1>
 
       <p>
-        Simple, private room-based messaging.
-        No account required.
+        Connect, communicate and share.
+        Simple real-time messaging.
       </p>
 
       <button id="createRoomBtn" class="primary-btn">
@@ -56,42 +64,58 @@
         id="roomLinkInput"
         type="text"
         placeholder="Paste your chat link here"
+        autocomplete="off"
       >
 
       <button id="joinRoomBtn" class="secondary-btn">
         Join Chat
+        <i class="fa-solid fa-arrow-right"></i>
       </button>
 
       <p id="homeError" class="error"></p>
+
     </div>
 
   </main>
 
-  <!-- Chat Page -->
+
+  <!-- CHAT PAGE -->
   <main id="chatPage" class="chat-page hidden">
 
     <section class="chat-container">
 
+      <!-- CHAT HEADER -->
       <div class="chat-header">
 
         <div class="room-info">
+
           <div class="avatar">
             <i class="fa-solid fa-user-group"></i>
           </div>
 
-          <div>
-            <h3>Chat Room</h3>
-            <p id="connectionStatus">Connecting...</p>
+          <div class="room-details">
+            <h3>Abrari Chat Room</h3>
+
+            <p>
+              <span id="connectionDot" class="status-dot"></span>
+              <span id="connectionStatus">Connecting...</span>
+            </p>
           </div>
+
         </div>
 
-        <button id="shareBtn" class="share-btn">
-          <i class="fa-solid fa-share-nodes"></i>
-          Share
-        </button>
+        <div class="header-actions">
+
+          <button id="shareBtn" class="icon-btn" title="Share Room">
+            <i class="fa-solid fa-share-nodes"></i>
+          </button>
+
+        </div>
 
       </div>
 
+
+      <!-- MESSAGES -->
       <div id="messages" class="messages">
 
         <div class="system-message">
@@ -100,12 +124,117 @@
 
       </div>
 
+
+      <!-- TYPING INDICATOR -->
       <div id="typingIndicator" class="typing hidden">
+        <span></span>
+        <span></span>
+        <span></span>
         Someone is typing...
       </div>
 
+
+      <!-- ATTACHMENT PREVIEW -->
+      <div id="attachmentPreview" class="attachment-preview hidden">
+
+        <div id="attachmentInfo" class="attachment-info"></div>
+
+        <button
+          type="button"
+          id="removeAttachmentBtn"
+          class="remove-attachment"
+          title="Remove attachment"
+        >
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+
+      </div>
+
+
+      <!-- COMPOSER -->
       <form id="messageForm" class="message-form">
 
+        <!-- ATTACHMENT BUTTON -->
+        <div class="attachment-wrapper">
+
+          <button
+            type="button"
+            id="attachmentBtn"
+            class="composer-btn"
+            title="Attach files"
+          >
+            <i class="fa-solid fa-plus"></i>
+          </button>
+
+          <div id="attachmentMenu" class="attachment-menu hidden">
+
+            <button type="button" data-attach="image">
+              <i class="fa-solid fa-image"></i>
+              <span>Photos</span>
+            </button>
+
+            <button type="button" data-attach="video">
+              <i class="fa-solid fa-video"></i>
+              <span>Videos</span>
+            </button>
+
+            <button type="button" data-attach="document">
+              <i class="fa-solid fa-file-lines"></i>
+              <span>Documents</span>
+            </button>
+
+            <button type="button" data-attach="audio">
+              <i class="fa-solid fa-music"></i>
+              <span>Music & Audio</span>
+            </button>
+
+          </div>
+
+        </div>
+
+
+        <!-- HIDDEN FILE INPUTS -->
+        <input
+          type="file"
+          id="imageInput"
+          accept="image/*"
+          hidden
+        >
+
+        <input
+          type="file"
+          id="videoInput"
+          accept="video/*"
+          hidden
+        >
+
+        <input
+          type="file"
+          id="documentInput"
+          accept=".pdf,.doc,.docx,.txt,.xls,.xlsx,.ppt,.pptx,.zip"
+          hidden
+        >
+
+        <input
+          type="file"
+          id="audioInput"
+          accept="audio/*"
+          hidden
+        >
+
+
+        <!-- EMOJI BUTTON -->
+        <button
+          type="button"
+          id="emojiBtn"
+          class="composer-btn"
+          title="Emoji"
+        >
+          <i class="fa-regular fa-face-smile"></i>
+        </button>
+
+
+        <!-- MESSAGE INPUT -->
         <input
           id="messageInput"
           type="text"
@@ -114,34 +243,94 @@
           autocomplete="off"
         >
 
-        <button type="submit" class="send-btn">
+
+        <!-- VOICE RECORD BUTTON -->
+        <button
+          type="button"
+          id="voiceBtn"
+          class="composer-btn voice-btn"
+          title="Record voice message"
+        >
+          <i class="fa-solid fa-microphone"></i>
+        </button>
+
+
+        <!-- SEND BUTTON -->
+        <button
+          type="submit"
+          id="sendBtn"
+          class="send-btn"
+          title="Send message"
+        >
           <i class="fa-solid fa-paper-plane"></i>
         </button>
 
       </form>
 
+
+      <!-- VOICE RECORDING PANEL -->
+      <div id="recordingPanel" class="recording-panel hidden">
+
+        <div class="recording-status">
+          <span class="recording-dot"></span>
+          Recording voice...
+        </div>
+
+        <span id="recordingTimer">00:00</span>
+
+        <button
+          type="button"
+          id="cancelRecordingBtn"
+          class="recording-cancel"
+        >
+          <i class="fa-solid fa-trash"></i>
+        </button>
+
+        <button
+          type="button"
+          id="stopRecordingBtn"
+          class="recording-send"
+        >
+          <i class="fa-solid fa-stop"></i>
+          Stop
+        </button>
+
+      </div>
+
+
+      <div class="chat-footer">
+        <span>Messages are transmitted in real time.</span>
+      </div>
+
     </section>
 
   </main>
 
-  <!-- Username Modal -->
+
+  <!-- USERNAME MODAL -->
   <div id="nameModal" class="modal hidden">
 
     <div class="modal-card">
 
+      <div class="modal-icon">
+        <i class="fa-solid fa-user"></i>
+      </div>
+
       <h2>Enter Your Name</h2>
 
-      <p>No registration required.</p>
+      <p>Choose a name to join this chat room.</p>
 
       <input
         id="usernameInput"
         type="text"
         maxlength="25"
         placeholder="Your name"
+        autocomplete="nickname"
       >
 
       <button id="enterChatBtn" class="primary-btn">
         Enter Chat
+        <i class="fa-solid fa-arrow-right"></i>
       </button>
 
       <p id="nameError" class="error"></p>
@@ -150,6 +339,27 @@
 
   </div>
 
+
+  <!-- EMOJI PANEL -->
+  <div id="emojiPanel" class="emoji-panel hidden">
+
+    <button type="button" class="emoji-item">😀</button>
+    <button type="button" class="emoji-item">😂</button>
+    <button type="button" class="emoji-item">😍</button>
+    <button type="button" class="emoji-item">🥰</button>
+    <button type="button" class="emoji-item">😊</button>
+    <button type="button" class="emoji-item">❤️</button>
+    <button type="button" class="emoji-item">👍</button>
+    <button type="button" class="emoji-item">🔥</button>
+    <button type="button" class="emoji-item">👏</button>
+    <button type="button" class="emoji-item">🙏</button>
+    <button type="button" class="emoji-item">🎉</button>
+    <button type="button" class="emoji-item">😎</button>
+
+  </div>
+
+
+  <!-- APPLICATION SCRIPT -->
   <script src="/script.js"></script>
 
 </body>
