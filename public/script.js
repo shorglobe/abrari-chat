@@ -1,36 +1,46 @@
 /* =========================================
    ABRARI CHAT
-   Step 3 - Frontend JavaScript
+   Complete Frontend JavaScript
+   Text Chat + Media Upload
 ========================================= */
 
-// Socket connection
+// =========================================
+// SOCKET CONNECTION
+// =========================================
+
 const socket = io({
   autoConnect: false
 });
 
-// API
 const API_BASE = "";
 
-// Main elements
+// =========================================
+// MAIN ELEMENTS
+// =========================================
+
 const homePage = document.getElementById("homePage");
 const chatPage = document.getElementById("chatPage");
+const nameModal = document.getElementById("nameModal");
 
 const createRoomBtn = document.getElementById("createRoomBtn");
 const joinRoomBtn = document.getElementById("joinRoomBtn");
 const enterChatBtn = document.getElementById("enterChatBtn");
 
 const usernameInput = document.getElementById("usernameInput");
-const roomLinkInput = document.getElementById("roomLink");
+const roomLinkInput = document.getElementById("roomLinkInput");
 
-const messageForm = document.getElementById("messageForm");
 const messageInput = document.getElementById("messageInput");
+const messageForm = document.getElementById("messageForm");
 const messages = document.getElementById("messages");
 
 const shareBtn = document.getElementById("shareBtn");
 const connectionStatus = document.getElementById("connectionStatus");
 const typingIndicator = document.getElementById("typingIndicator");
 
-// Attachment elements
+// =========================================
+// MEDIA ELEMENTS
+// =========================================
+
 const attachmentBtn = document.getElementById("attachmentBtn");
 const attachmentMenu = document.getElementById("attachmentMenu");
 
@@ -43,333 +53,390 @@ const videoInput = document.getElementById("videoInput");
 const documentInput = document.getElementById("documentInput");
 const audioInput = document.getElementById("audioInput");
 
-// Emoji elements
 const emojiBtn = document.getElementById("emojiBtn");
 const emojiPanel = document.getElementById("emojiPanel");
 
-// Voice elements
 const voiceBtn = document.getElementById("voiceBtn");
 const recordingPanel = document.getElementById("recordingPanel");
 const recordingTimer = document.getElementById("recordingTimer");
 const cancelRecordingBtn = document.getElementById("cancelRecordingBtn");
 const stopRecordingBtn = document.getElementById("stopRecordingBtn");
 
-// State
+// =========================================
+// APP VARIABLES
+// =========================================
+
+let currentRoomId = null;
 let currentUsername = "";
-let currentRoomId = "";
+
 let selectedFile = null;
 
 let mediaRecorder = null;
 let audioChunks = [];
+
 let recordingInterval = null;
 let recordingSeconds = 0;
+
+let cancelRecording = false;
 let typingTimeout = null;
 
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 // =========================================
 // HELPER FUNCTIONS
 // =========================================
 
-function getElement(id) {
-  return document.getElementById(id);
+function getRoomId() {
+
+  const pathParts = window.location.pathname.split("/");
+
+  if (pathParts[1] === "room" && pathParts[2]) {
+    return pathParts[2];
+  }
+
+  return null;
 }
 
-function showElement(element) {
-  if (element) element.classList.remove("hidden");
-}
+function formatTime(dateValue) {
 
-function hideElement(element) {
-  if (element) element.classList.add("hidden");
-}
+  const date = new Date(dateValue);
 
-function formatTime(date = new Date()) {
+  if (isNaN(date.getTime())) {
+    return "";
+  }
+
   return date.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit"
   });
 }
 
-function getRoomId() {
-  const match = window.location.pathname.match(/^\/room\/([a-zA-Z0-9_-]+)\/?$/);
-  return match ? match[1] : null;
-}
+function formatFileSize(bytes) {
 
-function setConnectionStatus(status, text) {
-  if (!connectionStatus) return;
-
-  connectionStatus.textContent = text || status;
-
-  const dot = document.getElementById("connectionDot");
-
-  if (dot) {
-    dot.style.background =
-      status === "connected" ? "#38d996" : "#ff647c";
+  if (bytes < 1024) {
+    return bytes + " B";
   }
+
+  if (bytes < 1024 * 1024) {
+    return (bytes / 1024).toFixed(1) + " KB";
+  }
+
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
 }
 
+function showAlert(message) {
+  alert(message);
+}
+
+// =========================================
+// PAGE NAVIGATION
+// =========================================
+
+function showHomePage() {
+
+  if (homePage) homePage.style.display = "block";
+  if (chatPage) chatPage.style.display = "none";
+}
+
+function showChatPage() {
+
+  if (homePage) homePage.style.display = "none";
+  if (chatPage) chatPage.style.display = "block";
+
+}
 
 // =========================================
 // CREATE ROOM
 // =========================================
 
 if (createRoomBtn) {
+
   createRoomBtn.addEventListener("click", async () => {
+
     try {
+
       createRoomBtn.disabled = true;
-      createRoomBtn.textContent = "Creating...";
 
       const response = await fetch(`${API_BASE}/api/rooms`, {
-        method: "POST"
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        }
       });
-
-      if (!response.ok) {
-        throw new Error("Could not create room");
-      }
 
       const data = await response.json();
 
-      if (!data.success || !data.link) {
-        throw new Error("Invalid server response");
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Room creation failed");
       }
 
-      window.location.href = data.link;
+      currentRoomId = data.roomId;
+
+      if (roomLinkInput) {
+        roomLinkInput.value =
+          window.location.origin + data.link;
+      }
+
+      openUsernameModal();
 
     } catch (error) {
-      console.error(error);
-      alert("Room creation failed. Please try again.");
+
+      console.error("Create room error:", error);
+      showAlert(error.message);
+
+    } finally {
 
       createRoomBtn.disabled = false;
-      createRoomBtn.textContent = "Create Room";
-    }
-  });
-}
 
+    }
+
+  });
+
+}
 
 // =========================================
 // JOIN ROOM
 // =========================================
 
 if (joinRoomBtn) {
-  joinRoomBtn.addEventListener("click", () => {
-    const link = roomLinkInput?.value.trim();
 
-    if (!link) {
-      alert("Please enter a room link.");
+  joinRoomBtn.addEventListener("click", async () => {
+
+    const roomId = getRoomIdFromInput();
+
+    if (!roomId) {
+      showAlert("Please enter a valid room ID or room link.");
       return;
     }
 
     try {
-      const url = new URL(link, window.location.origin);
-      const match = url.pathname.match(/^\/room\/([a-zA-Z0-9_-]+)\/?$/);
 
-      if (!match) {
-        alert("Invalid room link.");
-        return;
+      joinRoomBtn.disabled = true;
+
+      const response = await fetch(
+        `${API_BASE}/api/rooms/${encodeURIComponent(roomId)}`
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Room not found");
       }
 
-      window.location.href = `/room/${match[1]}`;
+      currentRoomId = data.roomId;
 
-    } catch {
-      alert("Please enter a valid room link.");
+      openUsernameModal();
+
+    } catch (error) {
+
+      console.error("Join room error:", error);
+      showAlert(error.message);
+
+    } finally {
+
+      joinRoomBtn.disabled = false;
+
     }
+
   });
+
 }
 
-
 // =========================================
-// INITIALIZE ROOM
+// GET ROOM ID FROM INPUT
 // =========================================
 
-async function initialize() {
-  currentRoomId = getRoomId();
+function getRoomIdFromInput() {
 
-  if (!currentRoomId) {
-    showElement(homePage);
-    hideElement(chatPage);
-    return;
-  }
+  const input = roomLinkInput?.value.trim();
+
+  if (!input) return null;
 
   try {
-    const response = await fetch(
-      `${API_BASE}/api/rooms/${encodeURIComponent(currentRoomId)}`
-    );
 
-    if (!response.ok) {
-      alert("Room not found or expired.");
-      window.location.href = "/";
-      return;
+    const url = new URL(input);
+
+    const parts = url.pathname.split("/");
+
+    if (parts[1] === "room" && parts[2]) {
+      return parts[2];
     }
-
-    const data = await response.json();
-
-    if (!data.success) {
-      alert("This room is not available.");
-      window.location.href = "/";
-      return;
-    }
-
-    hideElement(homePage);
-    showElement(chatPage);
-
-    const nameModal = document.getElementById("nameModal");
-    showElement(nameModal);
-
-    usernameInput?.focus();
 
   } catch (error) {
-    console.error(error);
-    alert("Unable to connect to the server.");
+
+    // Input may be a room ID instead of a URL.
+
   }
+
+  return input.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12);
 }
 
+// =========================================
+// USERNAME MODAL
+// =========================================
 
-// =========================================
-// ENTER CHAT
-// =========================================
+function openUsernameModal() {
+
+  if (nameModal) {
+    nameModal.style.display = "flex";
+  }
+
+  if (usernameInput) {
+    usernameInput.focus();
+  }
+
+}
 
 if (enterChatBtn) {
-  enterChatBtn.addEventListener("click", enterChat);
+
+  enterChatBtn.addEventListener("click", initializeChat);
+
 }
 
 if (usernameInput) {
+
   usernameInput.addEventListener("keydown", (event) => {
+
     if (event.key === "Enter") {
-      enterChat();
+      initializeChat();
     }
+
   });
+
 }
 
-function enterChat() {
+// =========================================
+// INITIALIZE CHAT
+// =========================================
+
+function initializeChat() {
+
   const username = usernameInput?.value.trim();
 
   if (!username) {
-    alert("Please enter your name.");
+    showAlert("Please enter your name.");
     return;
   }
 
-  if (username.length > 25) {
-    alert("Name must be 25 characters or less.");
+  if (!currentRoomId) {
+    showAlert("Room ID is missing.");
     return;
   }
 
-  currentUsername = username;
+  currentUsername = username.slice(0, 25);
 
-  hideElement(document.getElementById("nameModal"));
+  if (nameModal) {
+    nameModal.style.display = "none";
+  }
+
+  showChatPage();
+
+  if (window.location.pathname !== `/room/${currentRoomId}`) {
+
+    window.history.pushState(
+      {},
+      "",
+      `/room/${currentRoomId}`
+    );
+
+  }
+
+  if (messages) {
+    messages.innerHTML = "";
+  }
 
   socket.connect();
+
 }
 
-
 // =========================================
-// SOCKET CONNECTION
+// SOCKET CONNECTED
 // =========================================
 
 socket.on("connect", () => {
+
   console.log("Connected:", socket.id);
 
-  setConnectionStatus("connected", "Connected");
+  if (connectionStatus) {
+    connectionStatus.textContent = "Connected";
+    connectionStatus.classList.add("connected");
+  }
 
   socket.emit("join-room", {
     roomId: currentRoomId,
     username: currentUsername
   });
+
 });
+
+// =========================================
+// SOCKET DISCONNECTED
+// =========================================
 
 socket.on("disconnect", () => {
+
   console.log("Disconnected");
 
-  setConnectionStatus("disconnected", "Reconnecting...");
+  if (connectionStatus) {
+    connectionStatus.textContent = "Disconnected";
+    connectionStatus.classList.remove("connected");
+  }
+
 });
 
-socket.on("connect_error", (error) => {
-  console.error("Socket error:", error);
-  setConnectionStatus("disconnected", "Connection error");
-});
+// =========================================
+// USER JOINED
+// =========================================
 
 socket.on("user-joined", (data) => {
-  displaySystemMessage(`${data.username} joined the room`);
-});
 
+  showSystemMessage(`${data.username} joined the room`);
+
+});
 
 // =========================================
 // RECEIVE TEXT MESSAGE
 // =========================================
 
 socket.on("receive-message", (data) => {
+
   displayMessage(data);
+
 });
 
-
 // =========================================
-// DISPLAY MESSAGE
-// =========================================
-
-function displayMessage(data) {
-  if (!messages) return;
-
-  const messageElement = document.createElement("div");
-
-  const isMine = data.senderId === socket.id;
-
-  messageElement.className = `message ${isMine ? "mine" : "theirs"}`;
-
-  const nameElement = document.createElement("div");
-  nameElement.className = "message-name";
-  nameElement.textContent = isMine ? "You" : data.username;
-
-  const textElement = document.createElement("div");
-  textElement.textContent = data.message;
-
-  const timeElement = document.createElement("div");
-  timeElement.className = "message-time";
-
-  const messageDate = data.time ? new Date(data.time) : new Date();
-
-  timeElement.textContent = formatTime(
-    Number.isNaN(messageDate.getTime()) ? new Date() : messageDate
-  );
-
-  messageElement.append(nameElement, textElement, timeElement);
-
-  messages.appendChild(messageElement);
-
-  messages.scrollTop = messages.scrollHeight;
-}
-
-
-// =========================================
-// SYSTEM MESSAGE
+// RECEIVE MEDIA MESSAGE
 // =========================================
 
-function displaySystemMessage(message) {
-  if (!messages) return;
+socket.on("receive-media", (data) => {
 
-  const element = document.createElement("div");
+  displayMediaMessage(data);
 
-  element.className = "system-message";
-  element.textContent = message;
-
-  messages.appendChild(element);
-  messages.scrollTop = messages.scrollHeight;
-}
-
+});
 
 // =========================================
 // SEND TEXT MESSAGE
 // =========================================
 
 if (messageForm) {
-  messageForm.addEventListener("submit", (event) => {
+
+  messageForm.addEventListener("submit", async (event) => {
+
     event.preventDefault();
 
+    if (!socket.connected) {
+      showAlert("Not connected to chat.");
+      return;
+    }
+
     if (selectedFile) {
-      sendSelectedFile();
+      await sendSelectedFile();
       return;
     }
 
     const message = messageInput?.value.trim();
 
-    if (!message || !socket.connected) return;
+    if (!message) return;
 
     socket.emit("send-message", {
       message
@@ -378,16 +445,190 @@ if (messageForm) {
     messageInput.value = "";
 
     socket.emit("stop-typing");
+
   });
+
 }
 
+// =========================================
+// DISPLAY TEXT MESSAGE
+// =========================================
+
+function displayMessage(data) {
+
+  if (!messages) return;
+
+  const messageElement = document.createElement("div");
+
+  messageElement.className = "message";
+
+  const isOwnMessage = data.senderId === socket.id;
+
+  if (isOwnMessage) {
+    messageElement.classList.add("own-message");
+  }
+
+  const usernameElement = document.createElement("div");
+  usernameElement.className = "message-username";
+  usernameElement.textContent = data.username || "Guest";
+
+  const textElement = document.createElement("div");
+  textElement.className = "message-text";
+  textElement.textContent = data.message || "";
+
+  const timeElement = document.createElement("div");
+  timeElement.className = "message-time";
+  timeElement.textContent = formatTime(data.time);
+
+  messageElement.appendChild(usernameElement);
+  messageElement.appendChild(textElement);
+  messageElement.appendChild(timeElement);
+
+  messages.appendChild(messageElement);
+
+  scrollToBottom();
+
+}
+
+// =========================================
+// DISPLAY MEDIA MESSAGE
+// =========================================
+
+function displayMediaMessage(data) {
+
+  if (!messages) return;
+
+  const messageElement = document.createElement("div");
+
+  messageElement.className = "message media-message";
+
+  const isOwnMessage = data.username === currentUsername;
+
+  if (isOwnMessage) {
+    messageElement.classList.add("own-message");
+  }
+
+  const usernameElement = document.createElement("div");
+  usernameElement.className = "message-username";
+  usernameElement.textContent = data.username || "Guest";
+
+  const mediaContainer = document.createElement("div");
+  mediaContainer.className = "message-media";
+
+  const url = data.url;
+
+  if (!url || !url.startsWith("/uploads/")) return;
+
+  const fileType = data.fileType || "";
+  const fileName = data.originalName || "Attachment";
+
+  if (fileType.startsWith("image/")) {
+
+    const image = document.createElement("img");
+
+    image.src = url;
+    image.alt = fileName;
+    image.loading = "lazy";
+    image.className = "chat-image";
+
+    mediaContainer.appendChild(image);
+
+  } else if (fileType.startsWith("video/")) {
+
+    const video = document.createElement("video");
+
+    video.src = url;
+    video.controls = true;
+    video.preload = "metadata";
+    video.className = "chat-video";
+
+    mediaContainer.appendChild(video);
+
+  } else if (fileType.startsWith("audio/")) {
+
+    const audio = document.createElement("audio");
+
+    audio.src = url;
+    audio.controls = true;
+    audio.preload = "metadata";
+    audio.className = "chat-audio";
+
+    mediaContainer.appendChild(audio);
+
+  } else {
+
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "📄 " + fileName;
+    link.className = "chat-document";
+
+    mediaContainer.appendChild(link);
+
+  }
+
+  const fileInfo = document.createElement("div");
+  fileInfo.className = "media-file-info";
+
+  fileInfo.textContent =
+    fileName + " • " + formatFileSize(data.fileSize || 0);
+
+  const timeElement = document.createElement("div");
+  timeElement.className = "message-time";
+  timeElement.textContent = formatTime(data.time);
+
+  messageElement.appendChild(usernameElement);
+  messageElement.appendChild(mediaContainer);
+  messageElement.appendChild(fileInfo);
+  messageElement.appendChild(timeElement);
+
+  messages.appendChild(messageElement);
+
+  scrollToBottom();
+
+}
+
+// =========================================
+// SYSTEM MESSAGE
+// =========================================
+
+function showSystemMessage(message) {
+
+  if (!messages) return;
+
+  const element = document.createElement("div");
+
+  element.className = "system-message";
+  element.textContent = message;
+
+  messages.appendChild(element);
+
+  scrollToBottom();
+
+}
+
+// =========================================
+// SCROLL TO BOTTOM
+// =========================================
+
+function scrollToBottom() {
+
+  if (messages) {
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+}
 
 // =========================================
 // TYPING INDICATOR
 // =========================================
 
 if (messageInput) {
+
   messageInput.addEventListener("input", () => {
+
     if (!socket.connected) return;
 
     socket.emit("typing");
@@ -397,352 +638,480 @@ if (messageInput) {
     typingTimeout = setTimeout(() => {
       socket.emit("stop-typing");
     }, 1000);
+
   });
+
 }
 
 socket.on("user-typing", () => {
-  showElement(typingIndicator);
+
+  if (typingIndicator) {
+    typingIndicator.textContent = "Someone is typing...";
+    typingIndicator.style.display = "block";
+  }
+
 });
 
 socket.on("user-stop-typing", () => {
-  hideElement(typingIndicator);
-});
 
+  if (typingIndicator) {
+    typingIndicator.style.display = "none";
+  }
+
+});
 
 // =========================================
 // SHARE ROOM
 // =========================================
 
 if (shareBtn) {
+
   shareBtn.addEventListener("click", async () => {
-    const roomUrl = window.location.href;
+
+    const roomLink = window.location.origin +
+      `/room/${currentRoomId}`;
 
     try {
-      if (navigator.share) {
-        await navigator.share({
-          title: "Join Abrari Chat",
-          text: "Join my chat room!",
-          url: roomUrl
-        });
-      } else {
-        await navigator.clipboard.writeText(roomUrl);
-        alert("Room link copied!");
-      }
-    } catch (error) {
-      if (error.name !== "AbortError") {
-        console.error(error);
-        alert("Unable to share the room link.");
-      }
-    }
-  });
-}
 
+      if (navigator.share) {
+
+        await navigator.share({
+          title: "Abrari Chat",
+          text: "Join my chat room",
+          url: roomLink
+        });
+
+      } else {
+
+        await navigator.clipboard.writeText(roomLink);
+
+        showAlert("Room link copied!");
+
+      }
+
+    } catch (error) {
+
+      console.log("Share cancelled or failed:", error);
+
+    }
+
+  });
+
+}
 
 // =========================================
 // ATTACHMENT MENU
 // =========================================
 
-if (attachmentBtn) {
+if (attachmentBtn && attachmentMenu) {
+
   attachmentBtn.addEventListener("click", () => {
-    attachmentMenu?.classList.toggle("hidden");
-    hideElement(emojiPanel);
+
+    attachmentMenu.classList.toggle("active");
+
   });
+
 }
 
-document.querySelectorAll("[data-attach]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const type = button.dataset.attach;
-
-    hideElement(attachmentMenu);
-
-    const inputMap = {
-      image: imageInput,
-      video: videoInput,
-      document: documentInput,
-      audio: audioInput
-    };
-
-    inputMap[type]?.click();
-  });
-});
-
-
 // =========================================
-// FILE SELECTION
-// =========================================
-
-const fileInputs = [
-  imageInput,
-  videoInput,
-  documentInput,
-  audioInput
-].filter(Boolean);
-
-fileInputs.forEach((input) => {
-  input.addEventListener("change", () => {
-    const file = input.files?.[0];
-
-    if (!file) return;
-
-    selectFile(file);
-
-    // Allows selecting the same file again
-    input.value = "";
-  });
-});
-
-
-function selectFile(file) {
-  const maxSize = 25 * 1024 * 1024;
-
-  if (file.size > maxSize) {
-    alert("File size must be 25 MB or less.");
-    return;
-  }
-
-  selectedFile = file;
-
-  if (attachmentInfo) {
-    attachmentInfo.textContent =
-      `${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
-  }
-
-  showElement(attachmentPreview);
-  messageInput?.focus();
-}
-
-
-// =========================================
-// REMOVE ATTACHMENT
-// =========================================
-
-if (removeAttachmentBtn) {
-  removeAttachmentBtn.addEventListener("click", () => {
-    selectedFile = null;
-    hideElement(attachmentPreview);
-  });
-}
-
-
-// =========================================
-// SEND SELECTED FILE
-// =========================================
-
-function sendSelectedFile() {
-  if (!selectedFile) return;
-
-  if (!socket.connected) {
-    alert("Please wait for the chat connection.");
-    return;
-  }
-
-  /*
-    Media upload will be connected to the backend
-    and cloud storage in the next development step.
-
-    Do not send large files directly through Socket.IO.
-  */
-
-  alert(
-    "File selected successfully! Media upload will be enabled after backend setup."
-  );
-}
-
-
-// =========================================
-// EMOJI PICKER
-// =========================================
-
-if (emojiBtn) {
-  emojiBtn.addEventListener("click", () => {
-    emojiPanel?.classList.toggle("hidden");
-    hideElement(attachmentMenu);
-  });
-}
-
-document.querySelectorAll("[data-emoji]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const emoji = button.dataset.emoji;
-
-    if (!messageInput || !emoji) return;
-
-    const start = messageInput.selectionStart;
-    const end = messageInput.selectionEnd;
-
-    const oldText = messageInput.value;
-
-    messageInput.value =
-      oldText.slice(0, start) +
-      emoji +
-      oldText.slice(end);
-
-    messageInput.focus();
-
-    const newPosition = start + emoji.length;
-
-    messageInput.setSelectionRange(newPosition, newPosition);
-
-    hideElement(emojiPanel);
-  });
-});
-
-
-// =========================================
-// VOICE RECORDING
-// =========================================
-
-if (voiceBtn) {
-  voiceBtn.addEventListener("click", startRecording);
-}
-
-async function startRecording() {
-  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-    alert("Voice recording is not supported in this browser.");
-    return;
-  }
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true
-    });
-
-    audioChunks = [];
-
-    mediaRecorder = new MediaRecorder(stream);
-
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunks.push(event.data);
-      }
-    };
-
-    mediaRecorder.onstop = () => {
-      stream.getTracks().forEach((track) => track.stop());
-
-      if (audioChunks.length === 0) return;
-
-      const audioBlob = new Blob(audioChunks, {
-        type: mediaRecorder.mimeType || "audio/webm"
-      });
-
-      const audioFile = new File(
-        [audioBlob],
-        `voice-message-${Date.now()}.webm`,
-        { type: audioBlob.type }
-      );
-
-      selectFile(audioFile);
-
-      hideElement(recordingPanel);
-      clearInterval(recordingInterval);
-    };
-
-    mediaRecorder.start();
-
-    recordingSeconds = 0;
-
-    showElement(recordingPanel);
-
-    if (recordingTimer) {
-      recordingTimer.textContent = "00:00";
-    }
-
-    recordingInterval = setInterval(() => {
-      recordingSeconds++;
-
-      const minutes = String(
-        Math.floor(recordingSeconds / 60)
-      ).padStart(2, "0");
-
-      const seconds = String(
-        recordingSeconds % 60
-      ).padStart(2, "0");
-
-      if (recordingTimer) {
-        recordingTimer.textContent = `${minutes}:${seconds}`;
-      }
-
-      if (recordingSeconds >= 180) {
-        stopRecording();
-      }
-    }, 1000);
-
-  } catch (error) {
-    console.error("Microphone error:", error);
-    alert("Microphone permission is required for voice recording.");
-  }
-}
-
-
-// =========================================
-// STOP RECORDING
-// =========================================
-
-function stopRecording() {
-  if (mediaRecorder && mediaRecorder.state === "recording") {
-    mediaRecorder.stop();
-  }
-
-  clearInterval(recordingInterval);
-}
-
-
-// =========================================
-// CANCEL RECORDING
-// =========================================
-
-if (cancelRecordingBtn) {
-  cancelRecordingBtn.addEventListener("click", () => {
-    if (mediaRecorder && mediaRecorder.state === "recording") {
-      mediaRecorder.onstop = () => {
-        mediaRecorder.stream
-          ?.getTracks()
-          .forEach((track) => track.stop());
-      };
-
-      mediaRecorder.stop();
-    }
-
-    audioChunks = [];
-
-    clearInterval(recordingInterval);
-
-    hideElement(recordingPanel);
-  });
-}
-
-if (stopRecordingBtn) {
-  stopRecordingBtn.addEventListener("click", stopRecording);
-}
-
-
-// =========================================
-// CLOSE POPUPS WHEN CLICKING OUTSIDE
+// CLOSE ATTACHMENT MENU
 // =========================================
 
 document.addEventListener("click", (event) => {
+
   if (
     attachmentMenu &&
     attachmentBtn &&
     !attachmentMenu.contains(event.target) &&
     !attachmentBtn.contains(event.target)
   ) {
-    hideElement(attachmentMenu);
+
+    attachmentMenu.classList.remove("active");
+
   }
 
-  if (
-    emojiPanel &&
-    emojiBtn &&
-    !emojiPanel.contains(event.target) &&
-    !emojiBtn.contains(event.target)
-  ) {
-    hideElement(emojiPanel);
-  }
 });
 
+// =========================================
+// FILE INPUTS
+// =========================================
+
+function setupFileInput(inputElement) {
+
+  if (!inputElement) return;
+
+  inputElement.addEventListener("change", (event) => {
+
+    const file = event.target.files?.[0];
+
+    if (file) {
+      selectFile(file);
+    }
+
+    event.target.value = "";
+
+  });
+
+}
+
+setupFileInput(imageInput);
+setupFileInput(videoInput);
+setupFileInput(documentInput);
+setupFileInput(audioInput);
+
+// =========================================
+// SELECT FILE
+// =========================================
+
+function selectFile(file) {
+
+  if (file.size > MAX_FILE_SIZE) {
+
+    showAlert("Maximum file size is 25 MB.");
+    return;
+
+  }
+
+  selectedFile = file;
+
+  if (attachmentPreview) {
+    attachmentPreview.style.display = "flex";
+  }
+
+  if (attachmentInfo) {
+
+    attachmentInfo.textContent =
+      file.name + " (" + formatFileSize(file.size) + ")";
+
+  }
+
+  if (attachmentMenu) {
+    attachmentMenu.classList.remove("active");
+  }
+
+}
+
+// =========================================
+// REMOVE SELECTED FILE
+// =========================================
+
+if (removeAttachmentBtn) {
+
+  removeAttachmentBtn.addEventListener("click", () => {
+
+    selectedFile = null;
+
+    if (attachmentPreview) {
+      attachmentPreview.style.display = "none";
+    }
+
+  });
+
+}
+
+// =========================================
+// SEND SELECTED FILE
+// =========================================
+
+async function sendSelectedFile() {
+
+  if (!selectedFile) return;
+
+  if (!socket.connected) {
+    showAlert("Please connect to the chat first.");
+    return;
+  }
+
+  if (!currentRoomId) {
+    showAlert("Room not found.");
+    return;
+  }
+
+  const file = selectedFile;
+
+  const formData = new FormData();
+
+  formData.append("file", file);
+  formData.append("roomId", currentRoomId);
+  formData.append("username", currentUsername);
+
+  try {
+
+    const sendButton = messageForm?.querySelector(
+      'button[type="submit"]'
+    );
+
+    if (sendButton) {
+      sendButton.disabled = true;
+    }
+
+    const response = await fetch(`${API_BASE}/api/upload`, {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Upload failed");
+    }
+
+    selectedFile = null;
+
+    if (attachmentPreview) {
+      attachmentPreview.style.display = "none";
+    }
+
+    if (messageInput) {
+      messageInput.value = "";
+    }
+
+  } catch (error) {
+
+    console.error("Media upload error:", error);
+    showAlert(error.message);
+
+  } finally {
+
+    const sendButton = messageForm?.querySelector(
+      'button[type="submit"]'
+    );
+
+    if (sendButton) {
+      sendButton.disabled = false;
+    }
+
+  }
+
+}
+
+// =========================================
+// EMOJI PICKER
+// =========================================
+
+if (emojiBtn && emojiPanel) {
+
+  emojiBtn.addEventListener("click", () => {
+
+    emojiPanel.classList.toggle("active");
+
+  });
+
+}
+
+if (emojiPanel) {
+
+  emojiPanel.addEventListener("click", (event) => {
+
+    const target = event.target.closest(
+      "[data-emoji], button"
+    );
+
+    if (!target) return;
+
+    const emoji =
+      target.dataset.emoji || target.textContent.trim();
+
+    if (!emoji || !messageInput) return;
+
+    messageInput.value += emoji;
+    messageInput.focus();
+
+  });
+
+}
+
+// =========================================
+// VOICE RECORDING
+// =========================================
+
+if (voiceBtn) {
+
+  voiceBtn.addEventListener("click", startVoiceRecording);
+
+}
+
+async function startVoiceRecording() {
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+
+    showAlert("Voice recording is not supported in this browser.");
+    return;
+
+  }
+
+  try {
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true
+    });
+
+    audioChunks = [];
+    cancelRecording = false;
+    recordingSeconds = 0;
+
+    mediaRecorder = new MediaRecorder(stream);
+
+    mediaRecorder.ondataavailable = (event) => {
+
+      if (event.data.size > 0) {
+        audioChunks.push(event.data);
+      }
+
+    };
+
+    mediaRecorder.onstop = () => {
+
+      stream.getTracks().forEach(track => track.stop());
+
+      clearInterval(recordingInterval);
+
+      if (!cancelRecording && audioChunks.length > 0) {
+
+        const audioBlob = new Blob(audioChunks, {
+          type: mediaRecorder.mimeType || "audio/webm"
+        });
+
+        const audioFile = new File(
+          [audioBlob],
+          "voice-message.webm",
+          {
+            type: audioBlob.type
+          }
+        );
+
+        selectFile(audioFile);
+
+      }
+
+      if (recordingPanel) {
+        recordingPanel.style.display = "none";
+      }
+
+    };
+
+    mediaRecorder.start();
+
+    if (recordingPanel) {
+      recordingPanel.style.display = "flex";
+    }
+
+    recordingInterval = setInterval(() => {
+
+      recordingSeconds++;
+
+      if (recordingTimer) {
+
+        const minutes = Math.floor(recordingSeconds / 60);
+        const seconds = recordingSeconds % 60;
+
+        recordingTimer.textContent =
+          `${String(minutes).padStart(2, "0")}:` +
+          `${String(seconds).padStart(2, "0")}`;
+
+      }
+
+    }, 1000);
+
+  } catch (error) {
+
+    console.error("Microphone error:", error);
+
+    showAlert("Please allow microphone access.");
+
+  }
+
+}
+
+// =========================================
+// STOP RECORDING
+// =========================================
+
+if (stopRecordingBtn) {
+
+  stopRecordingBtn.addEventListener("click", () => {
+
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+    }
+
+  });
+
+}
+
+// =========================================
+// CANCEL RECORDING
+// =========================================
+
+if (cancelRecordingBtn) {
+
+  cancelRecordingBtn.addEventListener("click", () => {
+
+    cancelRecording = true;
+
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+    }
+
+  });
+
+}
+
+// =========================================
+// AUTO OPEN ROOM FROM URL
+// =========================================
+
+async function checkRoomFromURL() {
+
+  const roomId = getRoomId();
+
+  if (!roomId) {
+    showHomePage();
+    return;
+  }
+
+  try {
+
+    const response = await fetch(
+      `${API_BASE}/api/rooms/${encodeURIComponent(roomId)}`
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+
+      showAlert("This room does not exist or has expired.");
+
+      window.history.replaceState({}, "", "/");
+
+      showHomePage();
+
+      return;
+
+    }
+
+    currentRoomId = data.roomId;
+
+    openUsernameModal();
+
+  } catch (error) {
+
+    console.error("Room check error:", error);
+
+    showAlert("Could not connect to the server.");
+
+    showHomePage();
+
+  }
+
+}
 
 // =========================================
 // START APPLICATION
 // =========================================
 
-initialize();
+showHomePage();
+
+checkRoomFromURL();
+
+console.log("Abrari Chat frontend initialized");
