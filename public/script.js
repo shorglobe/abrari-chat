@@ -1,216 +1,349 @@
+/* =========================================
+   ABRARI CHAT
+   Step 3 - Frontend JavaScript
+========================================= */
+
+// Socket connection
 const socket = io({
   autoConnect: false
 });
 
+// API
+const API_BASE = "";
+
+// Main elements
 const homePage = document.getElementById("homePage");
 const chatPage = document.getElementById("chatPage");
-const nameModal = document.getElementById("nameModal");
 
 const createRoomBtn = document.getElementById("createRoomBtn");
 const joinRoomBtn = document.getElementById("joinRoomBtn");
 const enterChatBtn = document.getElementById("enterChatBtn");
 
 const usernameInput = document.getElementById("usernameInput");
-const roomLinkInput = document.getElementById("roomLinkInput");
-const messageInput = document.getElementById("messageInput");
+const roomLinkInput = document.getElementById("roomLink");
 
 const messageForm = document.getElementById("messageForm");
+const messageInput = document.getElementById("messageInput");
 const messages = document.getElementById("messages");
 
 const shareBtn = document.getElementById("shareBtn");
 const connectionStatus = document.getElementById("connectionStatus");
 const typingIndicator = document.getElementById("typingIndicator");
 
-let currentRoom = "";
+// Attachment elements
+const attachmentBtn = document.getElementById("attachmentBtn");
+const attachmentMenu = document.getElementById("attachmentMenu");
+
+const attachmentPreview = document.getElementById("attachmentPreview");
+const attachmentInfo = document.getElementById("attachmentInfo");
+const removeAttachmentBtn = document.getElementById("removeAttachmentBtn");
+
+const imageInput = document.getElementById("imageInput");
+const videoInput = document.getElementById("videoInput");
+const documentInput = document.getElementById("documentInput");
+const audioInput = document.getElementById("audioInput");
+
+// Emoji elements
+const emojiBtn = document.getElementById("emojiBtn");
+const emojiPanel = document.getElementById("emojiPanel");
+
+// Voice elements
+const voiceBtn = document.getElementById("voiceBtn");
+const recordingPanel = document.getElementById("recordingPanel");
+const recordingTimer = document.getElementById("recordingTimer");
+const cancelRecordingBtn = document.getElementById("cancelRecordingBtn");
+const stopRecordingBtn = document.getElementById("stopRecordingBtn");
+
+// State
 let currentUsername = "";
-let typingTimer;
+let currentRoomId = "";
+let selectedFile = null;
 
-// Create room
-createRoomBtn.addEventListener("click", async () => {
-  try {
-    createRoomBtn.disabled = true;
+let mediaRecorder = null;
+let audioChunks = [];
+let recordingInterval = null;
+let recordingSeconds = 0;
+let typingTimeout = null;
 
-    const response = await fetch("/api/rooms", {
-      method: "POST"
-    });
 
-    const data = await response.json();
+// =========================================
+// HELPER FUNCTIONS
+// =========================================
 
-    if (!response.ok) throw new Error("Room creation failed");
+function getElement(id) {
+  return document.getElementById(id);
+}
 
-    window.location.href = data.link;
+function showElement(element) {
+  if (element) element.classList.remove("hidden");
+}
 
-  } catch (error) {
-    document.getElementById("homeError").textContent =
-      "Unable to create room. Try again.";
-  } finally {
-    createRoomBtn.disabled = false;
-  }
-});
+function hideElement(element) {
+  if (element) element.classList.add("hidden");
+}
 
-// Join room using link
-joinRoomBtn.addEventListener("click", () => {
-  const value = roomLinkInput.value.trim();
+function formatTime(date = new Date()) {
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
 
-  try {
-    const url = new URL(value, window.location.origin);
-    const match = url.pathname.match(/^\/room\/([a-zA-Z0-9]+)$/);
-
-    if (!match) throw new Error("Invalid link");
-
-    window.location.href = "/room/" + match[1];
-
-  } catch {
-    document.getElementById("homeError").textContent =
-      "Please enter a valid chat link.";
-  }
-});
-
-// Read room ID from URL
 function getRoomId() {
-  const match = window.location.pathname.match(
-    /^\/room\/([a-zA-Z0-9]+)$/
-  );
-
+  const match = window.location.pathname.match(/^\/room\/([a-zA-Z0-9_-]+)\/?$/);
   return match ? match[1] : null;
 }
 
-// Check current page
-async function initialize() {
-  currentRoom = getRoomId();
+function setConnectionStatus(status, text) {
+  if (!connectionStatus) return;
 
-  if (!currentRoom) {
-    homePage.classList.remove("hidden");
+  connectionStatus.textContent = text || status;
+
+  const dot = document.getElementById("connectionDot");
+
+  if (dot) {
+    dot.style.background =
+      status === "connected" ? "#38d996" : "#ff647c";
+  }
+}
+
+
+// =========================================
+// CREATE ROOM
+// =========================================
+
+if (createRoomBtn) {
+  createRoomBtn.addEventListener("click", async () => {
+    try {
+      createRoomBtn.disabled = true;
+      createRoomBtn.textContent = "Creating...";
+
+      const response = await fetch(`${API_BASE}/api/rooms`, {
+        method: "POST"
+      });
+
+      if (!response.ok) {
+        throw new Error("Could not create room");
+      }
+
+      const data = await response.json();
+
+      if (!data.success || !data.link) {
+        throw new Error("Invalid server response");
+      }
+
+      window.location.href = data.link;
+
+    } catch (error) {
+      console.error(error);
+      alert("Room creation failed. Please try again.");
+
+      createRoomBtn.disabled = false;
+      createRoomBtn.textContent = "Create Room";
+    }
+  });
+}
+
+
+// =========================================
+// JOIN ROOM
+// =========================================
+
+if (joinRoomBtn) {
+  joinRoomBtn.addEventListener("click", () => {
+    const link = roomLinkInput?.value.trim();
+
+    if (!link) {
+      alert("Please enter a room link.");
+      return;
+    }
+
+    try {
+      const url = new URL(link, window.location.origin);
+      const match = url.pathname.match(/^\/room\/([a-zA-Z0-9_-]+)\/?$/);
+
+      if (!match) {
+        alert("Invalid room link.");
+        return;
+      }
+
+      window.location.href = `/room/${match[1]}`;
+
+    } catch {
+      alert("Please enter a valid room link.");
+    }
+  });
+}
+
+
+// =========================================
+// INITIALIZE ROOM
+// =========================================
+
+async function initialize() {
+  currentRoomId = getRoomId();
+
+  if (!currentRoomId) {
+    showElement(homePage);
+    hideElement(chatPage);
     return;
   }
 
   try {
-    const response = await fetch("/api/rooms/" + currentRoom);
+    const response = await fetch(
+      `${API_BASE}/api/rooms/${encodeURIComponent(currentRoomId)}`
+    );
 
-    if (!response.ok) throw new Error("Room not found");
+    if (!response.ok) {
+      alert("Room not found or expired.");
+      window.location.href = "/";
+      return;
+    }
 
-    homePage.classList.add("hidden");
-    chatPage.classList.remove("hidden");
-    nameModal.classList.remove("hidden");
+    const data = await response.json();
 
-  } catch {
-    window.location.href = "/";
+    if (!data.success) {
+      alert("This room is not available.");
+      window.location.href = "/";
+      return;
+    }
+
+    hideElement(homePage);
+    showElement(chatPage);
+
+    const nameModal = document.getElementById("nameModal");
+    showElement(nameModal);
+
+    usernameInput?.focus();
+
+  } catch (error) {
+    console.error(error);
+    alert("Unable to connect to the server.");
   }
 }
 
-// Enter chat
-enterChatBtn.addEventListener("click", () => {
-  currentUsername = usernameInput.value.trim().slice(0, 25);
 
-  if (!currentUsername) {
-    document.getElementById("nameError").textContent =
-      "Please enter your name.";
+// =========================================
+// ENTER CHAT
+// =========================================
+
+if (enterChatBtn) {
+  enterChatBtn.addEventListener("click", enterChat);
+}
+
+if (usernameInput) {
+  usernameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      enterChat();
+    }
+  });
+}
+
+function enterChat() {
+  const username = usernameInput?.value.trim();
+
+  if (!username) {
+    alert("Please enter your name.");
     return;
   }
 
-  nameModal.classList.add("hidden");
+  if (username.length > 25) {
+    alert("Name must be 25 characters or less.");
+    return;
+  }
+
+  currentUsername = username;
+
+  hideElement(document.getElementById("nameModal"));
 
   socket.connect();
-});
+}
 
-// Connected
+
+// =========================================
+// SOCKET CONNECTION
+// =========================================
+
 socket.on("connect", () => {
-  connectionStatus.textContent = "Online";
+  console.log("Connected:", socket.id);
+
+  setConnectionStatus("connected", "Connected");
 
   socket.emit("join-room", {
-    roomId: currentRoom,
+    roomId: currentRoomId,
     username: currentUsername
   });
 });
 
 socket.on("disconnect", () => {
-  connectionStatus.textContent = "Reconnecting...";
+  console.log("Disconnected");
+
+  setConnectionStatus("disconnected", "Reconnecting...");
 });
 
-// New user
+socket.on("connect_error", (error) => {
+  console.error("Socket error:", error);
+  setConnectionStatus("disconnected", "Connection error");
+});
+
 socket.on("user-joined", (data) => {
-  showSystemMessage(data.username + " joined the chat");
+  displaySystemMessage(`${data.username} joined the room`);
 });
 
-// Display message
-function displayMessage(data) {
-  const isMine = data.senderId === socket.id;
 
-  const messageBox = document.createElement("div");
-  messageBox.className = "message " +
-    (isMine ? "mine" : "theirs");
+// =========================================
+// RECEIVE TEXT MESSAGE
+// =========================================
 
-  if (!isMine) {
-    const name = document.createElement("div");
-    name.className = "message-name";
-    name.textContent = data.username;
-
-    messageBox.appendChild(name);
-  }
-
-  const text = document.createElement("div");
-  text.textContent = data.message;
-
-  const time = document.createElement("div");
-  time.className = "message-time";
-
-  time.textContent = new Date(data.time).toLocaleTimeString(
-    [],
-    { hour: "2-digit", minute: "2-digit" }
-  );
-
-  messageBox.appendChild(text);
-  messageBox.appendChild(time);
-
-  messages.appendChild(messageBox);
-
-  messages.scrollTop = messages.scrollHeight;
-}
-
-// Receive message
 socket.on("receive-message", (data) => {
   displayMessage(data);
 });
 
-// Send message
-messageForm.addEventListener("submit", (event) => {
-  event.preventDefault();
 
-  const message = messageInput.value.trim();
+// =========================================
+// DISPLAY MESSAGE
+// =========================================
 
-  if (!message || !socket.connected) return;
+function displayMessage(data) {
+  if (!messages) return;
 
-  socket.emit("send-message", {
-    message
-  });
+  const messageElement = document.createElement("div");
 
-  messageInput.value = "";
-  socket.emit("stop-typing");
-});
+  const isMine = data.senderId === socket.id;
 
-// Typing
-messageInput.addEventListener("input", () => {
-  if (!socket.connected) return;
+  messageElement.className = `message ${isMine ? "mine" : "theirs"}`;
 
-  socket.emit("typing");
+  const nameElement = document.createElement("div");
+  nameElement.className = "message-name";
+  nameElement.textContent = isMine ? "You" : data.username;
 
-  clearTimeout(typingTimer);
+  const textElement = document.createElement("div");
+  textElement.textContent = data.message;
 
-  typingTimer = setTimeout(() => {
-    socket.emit("stop-typing");
-  }, 1000);
-});
+  const timeElement = document.createElement("div");
+  timeElement.className = "message-time";
 
-socket.on("user-typing", () => {
-  typingIndicator.classList.remove("hidden");
-});
+  const messageDate = data.time ? new Date(data.time) : new Date();
 
-socket.on("user-stop-typing", () => {
-  typingIndicator.classList.add("hidden");
-});
+  timeElement.textContent = formatTime(
+    Number.isNaN(messageDate.getTime()) ? new Date() : messageDate
+  );
 
-// System message
-function showSystemMessage(message) {
+  messageElement.append(nameElement, textElement, timeElement);
+
+  messages.appendChild(messageElement);
+
+  messages.scrollTop = messages.scrollHeight;
+}
+
+
+// =========================================
+// SYSTEM MESSAGE
+// =========================================
+
+function displaySystemMessage(message) {
+  if (!messages) return;
+
   const element = document.createElement("div");
 
   element.className = "system-message";
@@ -220,32 +353,396 @@ function showSystemMessage(message) {
   messages.scrollTop = messages.scrollHeight;
 }
 
-// Share room link
-shareBtn.addEventListener("click", async () => {
-  const link = window.location.href;
+
+// =========================================
+// SEND TEXT MESSAGE
+// =========================================
+
+if (messageForm) {
+  messageForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+
+    if (selectedFile) {
+      sendSelectedFile();
+      return;
+    }
+
+    const message = messageInput?.value.trim();
+
+    if (!message || !socket.connected) return;
+
+    socket.emit("send-message", {
+      message
+    });
+
+    messageInput.value = "";
+
+    socket.emit("stop-typing");
+  });
+}
+
+
+// =========================================
+// TYPING INDICATOR
+// =========================================
+
+if (messageInput) {
+  messageInput.addEventListener("input", () => {
+    if (!socket.connected) return;
+
+    socket.emit("typing");
+
+    clearTimeout(typingTimeout);
+
+    typingTimeout = setTimeout(() => {
+      socket.emit("stop-typing");
+    }, 1000);
+  });
+}
+
+socket.on("user-typing", () => {
+  showElement(typingIndicator);
+});
+
+socket.on("user-stop-typing", () => {
+  hideElement(typingIndicator);
+});
+
+
+// =========================================
+// SHARE ROOM
+// =========================================
+
+if (shareBtn) {
+  shareBtn.addEventListener("click", async () => {
+    const roomUrl = window.location.href;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "Join Abrari Chat",
+          text: "Join my chat room!",
+          url: roomUrl
+        });
+      } else {
+        await navigator.clipboard.writeText(roomUrl);
+        alert("Room link copied!");
+      }
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        console.error(error);
+        alert("Unable to share the room link.");
+      }
+    }
+  });
+}
+
+
+// =========================================
+// ATTACHMENT MENU
+// =========================================
+
+if (attachmentBtn) {
+  attachmentBtn.addEventListener("click", () => {
+    attachmentMenu?.classList.toggle("hidden");
+    hideElement(emojiPanel);
+  });
+}
+
+document.querySelectorAll("[data-attach]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const type = button.dataset.attach;
+
+    hideElement(attachmentMenu);
+
+    const inputMap = {
+      image: imageInput,
+      video: videoInput,
+      document: documentInput,
+      audio: audioInput
+    };
+
+    inputMap[type]?.click();
+  });
+});
+
+
+// =========================================
+// FILE SELECTION
+// =========================================
+
+const fileInputs = [
+  imageInput,
+  videoInput,
+  documentInput,
+  audioInput
+].filter(Boolean);
+
+fileInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    const file = input.files?.[0];
+
+    if (!file) return;
+
+    selectFile(file);
+
+    // Allows selecting the same file again
+    input.value = "";
+  });
+});
+
+
+function selectFile(file) {
+  const maxSize = 25 * 1024 * 1024;
+
+  if (file.size > maxSize) {
+    alert("File size must be 25 MB or less.");
+    return;
+  }
+
+  selectedFile = file;
+
+  if (attachmentInfo) {
+    attachmentInfo.textContent =
+      `${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
+  }
+
+  showElement(attachmentPreview);
+  messageInput?.focus();
+}
+
+
+// =========================================
+// REMOVE ATTACHMENT
+// =========================================
+
+if (removeAttachmentBtn) {
+  removeAttachmentBtn.addEventListener("click", () => {
+    selectedFile = null;
+    hideElement(attachmentPreview);
+  });
+}
+
+
+// =========================================
+// SEND SELECTED FILE
+// =========================================
+
+function sendSelectedFile() {
+  if (!selectedFile) return;
+
+  if (!socket.connected) {
+    alert("Please wait for the chat connection.");
+    return;
+  }
+
+  /*
+    Media upload will be connected to the backend
+    and cloud storage in the next development step.
+
+    Do not send large files directly through Socket.IO.
+  */
+
+  alert(
+    "File selected successfully! Media upload will be enabled after backend setup."
+  );
+}
+
+
+// =========================================
+// EMOJI PICKER
+// =========================================
+
+if (emojiBtn) {
+  emojiBtn.addEventListener("click", () => {
+    emojiPanel?.classList.toggle("hidden");
+    hideElement(attachmentMenu);
+  });
+}
+
+document.querySelectorAll("[data-emoji]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const emoji = button.dataset.emoji;
+
+    if (!messageInput || !emoji) return;
+
+    const start = messageInput.selectionStart;
+    const end = messageInput.selectionEnd;
+
+    const oldText = messageInput.value;
+
+    messageInput.value =
+      oldText.slice(0, start) +
+      emoji +
+      oldText.slice(end);
+
+    messageInput.focus();
+
+    const newPosition = start + emoji.length;
+
+    messageInput.setSelectionRange(newPosition, newPosition);
+
+    hideElement(emojiPanel);
+  });
+});
+
+
+// =========================================
+// VOICE RECORDING
+// =========================================
+
+if (voiceBtn) {
+  voiceBtn.addEventListener("click", startRecording);
+}
+
+async function startRecording() {
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    alert("Voice recording is not supported in this browser.");
+    return;
+  }
 
   try {
-    if (navigator.share) {
-      await navigator.share({
-        title: "Abrari Chat",
-        text: "Join my chat room!",
-        url: link
-      });
-    } else {
-      await navigator.clipboard.writeText(link);
-      shareBtn.innerHTML =
-        '<i class="fa-solid fa-check"></i> Copied!';
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true
+    });
 
-      setTimeout(() => {
-        shareBtn.innerHTML =
-          '<i class="fa-solid fa-share-nodes"></i> Share';
-      }, 2000);
+    audioChunks = [];
+
+    mediaRecorder = new MediaRecorder(stream);
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        audioChunks.push(event.data);
+      }
+    };
+
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach((track) => track.stop());
+
+      if (audioChunks.length === 0) return;
+
+      const audioBlob = new Blob(audioChunks, {
+        type: mediaRecorder.mimeType || "audio/webm"
+      });
+
+      const audioFile = new File(
+        [audioBlob],
+        `voice-message-${Date.now()}.webm`,
+        { type: audioBlob.type }
+      );
+
+      selectFile(audioFile);
+
+      hideElement(recordingPanel);
+      clearInterval(recordingInterval);
+    };
+
+    mediaRecorder.start();
+
+    recordingSeconds = 0;
+
+    showElement(recordingPanel);
+
+    if (recordingTimer) {
+      recordingTimer.textContent = "00:00";
     }
+
+    recordingInterval = setInterval(() => {
+      recordingSeconds++;
+
+      const minutes = String(
+        Math.floor(recordingSeconds / 60)
+      ).padStart(2, "0");
+
+      const seconds = String(
+        recordingSeconds % 60
+      ).padStart(2, "0");
+
+      if (recordingTimer) {
+        recordingTimer.textContent = `${minutes}:${seconds}`;
+      }
+
+      if (recordingSeconds >= 180) {
+        stopRecording();
+      }
+    }, 1000);
+
   } catch (error) {
-    if (error.name !== "AbortError") {
-      alert("Unable to share link.");
+    console.error("Microphone error:", error);
+    alert("Microphone permission is required for voice recording.");
+  }
+}
+
+
+// =========================================
+// STOP RECORDING
+// =========================================
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+  }
+
+  clearInterval(recordingInterval);
+}
+
+
+// =========================================
+// CANCEL RECORDING
+// =========================================
+
+if (cancelRecordingBtn) {
+  cancelRecordingBtn.addEventListener("click", () => {
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      mediaRecorder.onstop = () => {
+        mediaRecorder.stream
+          ?.getTracks()
+          .forEach((track) => track.stop());
+      };
+
+      mediaRecorder.stop();
     }
+
+    audioChunks = [];
+
+    clearInterval(recordingInterval);
+
+    hideElement(recordingPanel);
+  });
+}
+
+if (stopRecordingBtn) {
+  stopRecordingBtn.addEventListener("click", stopRecording);
+}
+
+
+// =========================================
+// CLOSE POPUPS WHEN CLICKING OUTSIDE
+// =========================================
+
+document.addEventListener("click", (event) => {
+  if (
+    attachmentMenu &&
+    attachmentBtn &&
+    !attachmentMenu.contains(event.target) &&
+    !attachmentBtn.contains(event.target)
+  ) {
+    hideElement(attachmentMenu);
+  }
+
+  if (
+    emojiPanel &&
+    emojiBtn &&
+    !emojiPanel.contains(event.target) &&
+    !emojiBtn.contains(event.target)
+  ) {
+    hideElement(emojiPanel);
   }
 });
+
+
+// =========================================
+// START APPLICATION
+// =========================================
 
 initialize();
