@@ -2,7 +2,8 @@
    ABRARI CHAT
    Step 4 - Backend Server
 ========================================= */
-
+require("dotenv").config();
+const { MongoClient } = require("mongodb");
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
